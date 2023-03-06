@@ -32,6 +32,8 @@ func mdOutput(input []byte, fName string) {
 	err := os.WriteFile(fName, []byte(outStr), PERMS)
 	if err != nil {
 		log.Fatalf("Error writing to file %s Error: %s\n", fName, err.Error())
+	} else {
+		log.Printf("Wrote file: %s", fName)
 	}
 }
 
@@ -49,33 +51,49 @@ func mkOutDir(outdir string) {
 
 }
 
+func createOutFiles(fList []fs.DirEntry, inDir *string, outDir *string) {
+	mkOutDir(*outDir)
+
+	for _, f := range fList {
+		if f.IsDir() {
+			inDirName := fmt.Sprintf("%s/%s", *inDir, f.Name())
+			outDirName := fmt.Sprintf("%s/%s", *outDir, f.Name())
+
+			fList, err := os.ReadDir(inDirName)
+			if err != nil {
+				log.Fatalf(err.Error())
+			}
+
+			createOutFiles(fList, &inDirName, &outDirName)
+		} else {
+			if !strings.HasSuffix(f.Name(), ".md") {
+				log.Printf("Ignoring file: %s\n", f.Name())
+				continue
+			}
+
+			log.Printf("Found file: %s/%s\n", *inDir, f.Name())
+			fPath := fmt.Sprintf("%s/%s", *inDir, f.Name())
+			fData, err := os.ReadFile(fPath)
+			if err != nil {
+				log.Fatalf("Error reading from file: %s Error: %s\n", f.Name(), err.Error())
+			}
+
+			htmlOutname := strings.TrimSuffix(f.Name(), ".md")
+			htmlOutname += ".html"
+			mdOutput(fData, fmt.Sprintf("%s/%s", *outDir, htmlOutname))
+		}
+	}
+}
+
 func main() {
 	outDir := flag.String("out-dir", "dist", "The output directory for the generated files")
 	inDir := flag.String("in-dir", "inputs", "The directory containing the markdown files")
 	flag.Parse()
 
-	mkOutDir(*outDir)
 	inFiles, err := os.ReadDir(*inDir)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 
-	for _, f := range inFiles {
-		if !strings.HasSuffix(f.Name(), ".md") {
-			log.Printf("Ignoring file: %s\n", f.Name())
-			continue
-		}
-
-		log.Printf("Found file: %s\n", f.Name())
-		fPath := fmt.Sprintf("%s/%s", *inDir, f.Name())
-		fData, err := os.ReadFile(fPath)
-		if err != nil {
-			log.Fatalf("Error reading from file %s Error: %s\n", f.Name(), err.Error())
-		}
-
-		htmlOutname := strings.TrimSuffix(f.Name(), ".md")
-		htmlOutname += ".html"
-		mdOutput(fData, fmt.Sprintf("%s/%s", *outDir, htmlOutname))
-	}
-
+	createOutFiles(inFiles, inDir, outDir)
 }
