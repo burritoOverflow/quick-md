@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/russross/blackfriday/v2"
@@ -25,6 +26,8 @@ const HTML_START string = `<!DOCTYPE html>
 
 const HTML_END string = `</body></html>`
 
+// Given `input` bytes from a md file, generate the corresponding html output
+// and write these contents to `fName`
 func mdOutput(input []byte, fName string) {
 	bfOut := blackfriday.Run(input)
 	outStr := fmt.Sprintf("%s%s%s", HTML_START, bfOut, HTML_END)
@@ -37,9 +40,10 @@ func mdOutput(input []byte, fName string) {
 	}
 }
 
-func mkOutDir(outdir string) {
+// create the output directory with the name `outdir` and permissions `perms`
+func mkOutDir(outdir string, perms fs.FileMode) {
 	if _, err := os.Stat(outdir); os.IsNotExist(err) {
-		err := os.Mkdir(outdir, PERMS)
+		err := os.Mkdir(outdir, perms)
 		if err != nil {
 			log.Fatalf("Error creating directory: '%s'\n", outdir)
 		}
@@ -51,38 +55,55 @@ func mkOutDir(outdir string) {
 
 }
 
-func createOutFiles(fList []fs.DirEntry, inDir *string, outDir *string) {
-	mkOutDir(*outDir)
+// return the entries of the provided `dir`
+func dirents(dir string) []fs.DirEntry {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		log.Fatalf("Error reading directory: %s, Error: %s", dir, err.Error())
+	}
+	return entries
+}
 
-	for _, f := range fList {
-		if f.IsDir() {
-			inDirName := fmt.Sprintf("%s/%s", *inDir, f.Name())
-			outDirName := fmt.Sprintf("%s/%s", *outDir, f.Name())
+// Create and store generated html files in `outDir` from md files in `inDir`.
+// the output directory only contains the generated html files;
+// any non-md files are ignored
+func createOutFiles(inDir *string, outDir *string) {
+	dirents := dirents(*inDir)
+	mkOutDir(*outDir, PERMS)
 
-			fList, err := os.ReadDir(inDirName)
-			if err != nil {
-				log.Fatalf(err.Error())
-			}
+	for _, entry := range dirents {
+		if entry.IsDir() {
+			// nested directories will have the same name within the newly named
+			// output directory
+			subInDir := filepath.Join(*inDir, entry.Name())
+			subOutDir := filepath.Join(*outDir, entry.Name())
 
-			createOutFiles(fList, &inDirName, &outDirName)
+			// recursively walk subdirs
+			createOutFiles(&subInDir, &subOutDir)
 		} else {
-			if !strings.HasSuffix(f.Name(), ".md") {
-				log.Printf("Ignoring file: %s\n", f.Name())
+			fName := entry.Name()
+			if !strings.HasSuffix(entry.Name(), ".md") {
+				log.Printf("Ignoring non-markdown file: %s\n", fName)
 				continue
 			}
-
-			log.Printf("Found file: %s/%s\n", *inDir, f.Name())
-			fPath := fmt.Sprintf("%s/%s", *inDir, f.Name())
-			fData, err := os.ReadFile(fPath)
-			if err != nil {
-				log.Fatalf("Error reading from file: %s Error: %s\n", f.Name(), err.Error())
-			}
-
-			htmlOutname := strings.TrimSuffix(f.Name(), ".md")
-			htmlOutname += ".html"
-			mdOutput(fData, fmt.Sprintf("%s/%s", *outDir, htmlOutname))
+			log.Printf("Found file: %s/%s\n", *inDir, fName)
+			genOutFile(entry.Name(), *inDir, *outDir)
 		}
 	}
+}
+
+// Generate an outfile for `fName` in `outDir`
+func genOutFile(fName string, inDir string, outDir string) {
+	fPath := filepath.Join(inDir, fName)
+	fData, err := os.ReadFile(fPath)
+	if err != nil {
+		log.Fatalf("Error reading from file: %s Error: %s\n", fName, err.Error())
+	}
+
+	htmlOutname := strings.TrimSuffix(fName, ".md")
+	htmlOutname += ".html"
+	outFilePath := filepath.Join(outDir, htmlOutname)
+	mdOutput(fData, outFilePath)
 }
 
 func main() {
@@ -90,10 +111,5 @@ func main() {
 	inDir := flag.String("in-dir", "inputs", "The directory containing the markdown files")
 	flag.Parse()
 
-	inFiles, err := os.ReadDir(*inDir)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-
-	createOutFiles(inFiles, inDir, outDir)
+	createOutFiles(inDir, outDir)
 }
