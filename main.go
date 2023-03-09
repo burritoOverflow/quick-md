@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/russross/blackfriday/v2"
+	"github.com/gomarkdown/markdown"
+	"github.com/gomarkdown/markdown/html"
+	"github.com/gomarkdown/markdown/parser"
 )
 
 const PERMS fs.FileMode = 0755
@@ -26,11 +28,22 @@ const HTML_START string = `<!DOCTYPE html>
 
 const HTML_END string = `</body></html>`
 
+// configure a Parser and Renderer with the desired options
+func makeParserRenderer() (mdParser *parser.Parser, htmlRenderer *html.Renderer) {
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	mdParser = parser.NewWithExtensions(extensions)
+	htmlFlags := html.CommonFlags
+	opts := html.RendererOptions{Flags: htmlFlags}
+	htmlRenderer = html.NewRenderer(opts)
+	return
+}
+
 // Given `input` bytes from a md file, generate the corresponding html output
 // and write these contents to `fName`
 func mdOutput(input []byte, fName string) {
-	bfOut := blackfriday.Run(input)
-	outStr := fmt.Sprintf("%s%s%s", HTML_START, bfOut, HTML_END)
+	parser, renderer := makeParserRenderer()
+	htmlOut := markdown.ToHTML(input, parser, renderer)
+	outStr := fmt.Sprintf("%s%s%s", HTML_START, htmlOut, HTML_END)
 
 	err := os.WriteFile(fName, []byte(outStr), PERMS)
 	if err != nil {

@@ -1,4 +1,4 @@
-Convert an input directory of markdown files to html, using [Blackfriday](https://github.com/russross/blackfriday/tree/v2).
+Convert an input directory of markdown files to html, using [GoMarkdown](https://github.com/gomarkdown/markdown) library.
 
 Build:
 
